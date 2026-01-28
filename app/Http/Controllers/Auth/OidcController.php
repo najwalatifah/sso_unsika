@@ -20,7 +20,11 @@ class OidcController extends Controller
      */
     public function redirect(): RedirectResponse
     {
-        return Socialite::driver('keycloak')->redirect();
+        return Socialite::driver('keycloak')
+        ->with([
+            'prompt' => 'login',
+        ])
+        ->redirect();
     }
 
     /**
@@ -28,19 +32,14 @@ class OidcController extends Controller
      */
     public function callback(Request $request): Response
     {
-        // kalau akses manual tanpa code
-        if (! $request->has('code') && ! $request->has('state')) {
-            return response('OIDC callback OK (no authorization code).', 200);
+        if (! $request->has('code')) {
+            return response('OIDC callback OK', 200);
         }
 
         try {
-            // ambil user dari Keycloak
             $kcUser = Socialite::driver('keycloak')->user();
-
-            // ambil access token
             $accessToken = $kcUser->token;
 
-            // decode JWT access token
             $payload = json_decode(
                 base64_decode(explode('.', $accessToken)[1]),
                 true
@@ -48,7 +47,7 @@ class OidcController extends Controller
 
             Log::info('KEYCLOAK TOKEN PAYLOAD', $payload);
 
-        } catch (Throwable $e) {
+        } catch (\Throwable $e) {
             Log::error('SSO ERROR', ['error' => $e->getMessage()]);
 
             return redirect()
@@ -56,76 +55,98 @@ class OidcController extends Controller
                 ->withErrors(['email' => 'SSO login failed.']);
         }
 
-        /**
-         * =============================
-         * AMBIL DATA DARI TOKEN
-         * =============================
-         */
+        // =============================
+        // AMBIL DATA TOKEN
+        // =============================
         $email = $kcUser->getEmail();
         if (! $email) {
-            return redirect()
-                ->route('login')
-                ->withErrors(['email' => 'Email not provided by SSO.']);
+            abort(403, 'Email tidak tersedia dari SSO');
         }
 
         $name = $kcUser->getName()
             ?: ($payload['preferred_username'] ?? $email);
 
-        $roles = $payload['roles'] ?? [];
+        // ambil roles dari token
+        $roles = $payload['realm_access']['roles'] ?? [];
 
+        // mapping role aplikasi
+        if (in_array('admin', $roles)) {
+            $role = 'admin';
+        } elseif (in_array('dosen', $roles)) {
+            $role = 'dosen';
+        } elseif (in_array('mahasiswa', $roles)) {
+            $role = 'mahasiswa';
+        } else {
+            abort(403, 'Role tidak dikenali');
+        }
 
+        // ambil atribut kampus
         $nim = $payload['nim'] ?? null;
+        $nip = $payload['nip'] ?? null;
 
-        /**
-         * =============================
-         * MAPPING ROLE (FINAL)
-         * =============================
-         */
-        $role =
-            in_array('admin', $roles) ? 'admin' :
-            (in_array('dosen', $roles) ? 'dosen' : 'mahasiswa');
+        // =============================
+        // MAPPING ROLE (AMAN)
+        // =============================
+        if (in_array('admin', $roles)) {
+            $role = 'admin';
+        } elseif (in_array('dosen', $roles)) {
+            $role = 'dosen';
+        } elseif (in_array('mahasiswa', $roles)) {
+            $role = 'mahasiswa';
+        } else {
+            abort(403, 'Role tidak dikenali');
+        }
 
-        /**
-         * =============================
-         * SIMPAN / UPDATE USER
-         * =============================
-         */
+        // =============================
+        // SIMPAN USER
+        // =============================
         $user = User::updateOrCreate(
             ['email' => $email],
             [
                 'name'              => $name,
                 'role'              => $role,
-                'nim'               => $nim, 
-                'password'          => bcrypt(Str::random(32)),
+                'nim'               => $nim,
+                'nip'               => $nip,
                 'email_verified_at' => now(),
             ]
         );
 
-        /**
-         * =============================
-         * LOGIN USER
-         * =============================
-         */
-        Auth::login($user, true);
+        Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect('/dashboard');
-}
-
-    /**
-     * Logout Laravel + Keycloak
-     */
-    public function logout()
-    {
-        Auth::logout();
-        session()->invalidate();
-        session()->regenerateToken();
-
-        $keycloakLogoutUrl =
-            'http://localhost:8080/realms/unsika/protocol/openid-connect/logout'
-            .'?client_id=laravel-app'
-            .'&post_logout_redirect_uri='.urlencode('http://sso.local');
-
-        return redirect($keycloakLogoutUrl);
+        // =============================
+        // AUTO REDIRECT SESUAI ROLE
+        // =============================
+        return redirect(match ($role) {
+            'admin' => '/admin/dashboard',
+            'dosen' => '/dosen/dashboard',
+            'mahasiswa' => '/mahasiswa/dashboard',
+        });
     }
+
+
+    public function logout(Request $request)
+    {
+        $idToken = session('id_token');
+
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        $keycloakLogoutUrl = config('services.keycloak.base_url')
+            . '/realms/' . config('services.keycloak.realms')
+            . '/protocol/openid-connect/logout';
+
+        $params = [
+            'client_id' => config('services.keycloak.client_id'),
+            'post_logout_redirect_uri' => route('login'),
+        ];
+
+        if ($idToken) {
+            $params['id_token_hint'] = $idToken;
+        }
+
+        return redirect($keycloakLogoutUrl . '?' . http_build_query($params));
+    }
+
 }

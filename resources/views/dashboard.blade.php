@@ -11,8 +11,10 @@
                 <div class="p-6 text-gray-900">
                     <div class="flex items-center justify-between">
                         <div>{{ __("You're logged in!") }}</div>
-                        <form method="POST" action="{{ route('oidc.logout') }}">
+                        <form method="POST" action="{{ route('logout') }}">
                             @csrf
+                            <button type="submit">Logout</button>
+                        </form>
                             <x-secondary-button>
                                 {{ __('Logout') }}
                             </x-secondary-button>

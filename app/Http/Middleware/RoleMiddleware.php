@@ -11,15 +11,14 @@ class RoleMiddleware
     {
         $user = auth()->user();
 
-        if (! $user) {
-            abort(401, 'Unauthenticated');
+        if (!$user) {
+            return redirect('/login');
         }
 
-        if (! in_array($user->role, $roles)) {
-            abort(403, 'Unauthorized');
+        if (!in_array($user->role, $roles, true)) {
+            abort(403);
         }
 
         return $next($request);
     }
 }
-

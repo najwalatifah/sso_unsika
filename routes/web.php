@@ -1,15 +1,26 @@
 <?php
 
+use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\Auth\OidcController;
+use App\Http\Controllers\DosenDashboardController;
+use App\Http\Controllers\MahasiswaDashboardController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Middleware\RedirectIfAuthenticated;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome');
 
-Route::view('/dashboard', 'dashboard')
-    ->middleware(['auth', 'verified'])
-    ->name('dashboard');
+Route::get('/dashboard', function () {
+    if (! auth()->check()) {
+        return redirect('/login');
+    }
+
+    return match (auth()->user()->role) {
+        'admin' => redirect('/admin/dashboard'),
+        'dosen' => redirect('/dosen/dashboard'),
+        'mahasiswa' => redirect('/mahasiswa/dashboard'),
+        default => abort(403),
+    };
+})->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -17,38 +28,31 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-/* =========================
-   OIDC ROUTES (SUDAH DIBENERIN)
-   ========================= */
-
 Route::middleware('guest')->group(function () {
     Route::get('/login/oidc', [OidcController::class, 'redirect'])
-        ->withoutMiddleware([RedirectIfAuthenticated::class])
         ->name('oidc.redirect');
 
     Route::get('/login/oidc/callback', [OidcController::class, 'callback'])
-        ->withoutMiddleware([RedirectIfAuthenticated::class])
         ->name('oidc.callback');
 });
 
+Route::get('/login', [OidcController::class, 'redirect'])
+    ->middleware('guest')
+    ->name('login');
+
 Route::post('/logout', [OidcController::class, 'logout'])
-    ->middleware('auth')
     ->name('logout');
 
-Route::middleware(['auth'])->group(function () {
 
-    Route::middleware('role:mahasiswa')->group(function () {
-        Route::get('/mahasiswa/dashboard', fn () => 'Dashboard Mahasiswa');
-    });
+Route::middleware('auth')->group(function () {
+    Route::get('/admin/dashboard', [AdminDashboardController::class, 'index'])
+        ->middleware('role:admin');
 
-    Route::middleware('role:dosen')->group(function () {
-        Route::get('/dosen/dashboard', fn () => 'Dashboard Dosen');
-    });
+    Route::get('/dosen/dashboard', [DosenDashboardController::class, 'index'])
+        ->middleware('role:dosen');
 
-    Route::middleware('role:admin,dosen')->group(function () {
-        Route::get('/admin', fn () => 'Admin Area');
-    });
-
+    Route::get('/mahasiswa/dashboard', [MahasiswaDashboardController::class, 'index'])
+        ->middleware('role:mahasiswa');
 });
 
 require __DIR__.'/auth.php';
