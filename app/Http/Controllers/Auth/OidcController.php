@@ -31,7 +31,8 @@ class OidcController extends Controller
      * Callback dari Keycloak
      */
     public function callback(Request $request): Response
-    {
+    {   
+
         if (! $request->has('code')) {
             return response('OIDC callback OK', 200);
         }
