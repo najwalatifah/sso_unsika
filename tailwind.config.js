@@ -11,6 +11,13 @@ export default {
 
     theme: {
         extend: {
+            colors: {
+                primary: '#070367',     // biru tua
+                secondary: '#A5BEE2',   // biru muda
+                graycustom: '#CECDCD',  // abu-abu
+                whitecustom: '#FFFFFF', // putih
+                blackcustom: '#000000', // hitam
+            },
             fontFamily: {
                 sans: ['Figtree', ...defaultTheme.fontFamily.sans],
             },

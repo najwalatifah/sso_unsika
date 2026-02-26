@@ -7,7 +7,9 @@ use App\Http\Controllers\MahasiswaDashboardController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome');
+Route::get('/', function () {
+    return redirect()->route('oidc.redirect');
+});
 
 Route::get('/dashboard', function () {
     if (! auth()->check()) {
